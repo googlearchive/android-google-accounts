@@ -261,7 +261,12 @@ public class MainActivity extends FragmentActivity implements
         Log.i(TAG, "onConnectionFailed: ConnectionResult.getErrorCode() = "
                 + result.getErrorCode());
 
-        if (mSignInProgress != STATE_IN_PROGRESS) {
+        if (result.getErrorCode() == ConnectionResult.API_UNAVAILABLE) {
+            // An API requested for GoogleApiClient is not available. The device's current
+            // configuration might not be supported with the requested API or a required component
+            // may not be installed, such as the Android Wear application. You may need to use a
+            // second GoogleApiClient to manage the application's optional APIs.
+        } else if (mSignInProgress != STATE_IN_PROGRESS) {
             // We do not have an intent in progress so we should store the latest error
             // resolution intent for use when the sign in button is clicked.
             mSignInIntent = result.getResolution();
