@@ -161,10 +161,7 @@ public class MainActivity extends FragmentActivity implements
     @Override
     protected void onStop() {
         super.onStop();
-
-        if (mGoogleApiClient.isConnected()) {
-            mGoogleApiClient.disconnect();
-        }
+        mGoogleApiClient.disconnect();
     }
 
     /**
