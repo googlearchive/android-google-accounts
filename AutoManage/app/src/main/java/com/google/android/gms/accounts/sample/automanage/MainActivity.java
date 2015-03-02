@@ -24,6 +24,7 @@ import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.Scopes;
@@ -36,7 +37,7 @@ import com.google.android.gms.plus.Plus;
 import com.google.android.gms.plus.model.people.Person;
 
 /**
- * Google Play Services Accounts sample.
+ * Google Play Services Accounts AutoManage sample.
  *
  * Demonstrates Google Sign-In and the usage of some of the Google APIs available in Google Play
  * services. The application saves whether the user was last signed into the app to determine
@@ -65,7 +66,7 @@ public class MainActivity extends FragmentActivity implements
     /**
      * Preference that tracks whether the user is currently signed into the app.
      * Specifically, if a user signs into the app via a Google Account and then comes back to it
-     * later this indicates they were last signed in. This preference is used to detetermine
+     * later this indicates they were last signed in. This preference is used to determine
      * whether to initiate the GoogleApiClient connection immediately upon opening the activity.
      * This logic prevents the user's first experience with your app from being an OAuth2 consent
      * dialog.
@@ -74,7 +75,9 @@ public class MainActivity extends FragmentActivity implements
 
     /**
      * GoogleApiClient is a service connection to Google Play services and provides access
-     * to the user's OAuth2 and API availability state for the APIs and scopes requested.
+     * to the user's OAuth2 and API availability state for the APIs and scopes requested. Before
+     * making Google Play services API calls ensure
+     * {@code com.google.android.gms.common.api.GoogleApiClient.isConnected()} returns true.
      */
     protected GoogleApiClient mGoogleApiClient;
 
@@ -102,6 +105,12 @@ public class MainActivity extends FragmentActivity implements
 
         if (isSignedIn()) {
             rebuildGoogleApiClient();
+            // TODO: This next IF statement temporarily deals with an issue where autoManage doesn't
+            // call the onConnected callback after a Builder.build() when re-connecting after a
+            // rotation change. Will remove when fixed.
+            if (mGoogleApiClient != null && mGoogleApiClient.isConnected()) {
+                onConnected(null);
+            }
         }
     }
 
@@ -111,14 +120,23 @@ public class MainActivity extends FragmentActivity implements
     protected synchronized void rebuildGoogleApiClient() {
         // When we build the GoogleApiClient we specify where connected and connection failed
         // callbacks should be returned, which Google APIs our app uses and which OAuth 2.0
-        // scopes our app requests. Since we are using enableAutoManage to register the failed
-        // connection listener we only get failed connection when auto-resolution attempts were not
-        // successful or possible.
+        // scopes our app requests. When using enableAutoManage to register the failed connection
+        // listener it will only be called back when auto-resolution attempts were not
+        // successful or possible. A normal ConnectionFailedListener is also registered below to
+        // notify the activity when it needs to stop making API calls.
         mGoogleApiClient = new GoogleApiClient.Builder(this)
                 .enableAutoManage(this /* FragmentActivity */,
                         0 /* googleApiClientId used when auto-managing multiple googleApiClients */,
                         this /* OnConnectionFailedListener */)
                 .addConnectionCallbacks(this /* ConnectionCallbacks */)
+                // Register a connection listener that will notify on disconnect (including ones
+                // caused by calling disconnect on the GoogleApiClient).
+                .addOnConnectionFailedListener(new OnConnectionFailedListener() {
+                    @Override
+                    public void onConnectionFailed(ConnectionResult connectionResult) {
+                        googleApiClientConnectionStateChange(true);
+                    }
+                })
                 .addApi(Plus.API)
                 .addScope(new Scope(Scopes.PLUS_ME))
                         // TODO(developer): Specify any additional API Scopes or APIs you need here.
@@ -190,8 +208,9 @@ public class MainActivity extends FragmentActivity implements
      */
     @Override
     public void onConnected(Bundle connectionHint) {
-        // Reaching onConnected means we consider the user signed in and all APIs previously
-        // specified are available.
+        // Reaching onConnected means the user signed in via their Google Account and all APIs
+        // previously specified are available.
+        googleApiClientConnectionStateChange(true);
 
         // IMPORTANT NOTE: If you are storing any user data locally or even in a remote
         // application DO NOT associate it to the accountName (which is also an email address).
@@ -200,12 +219,24 @@ public class MainActivity extends FragmentActivity implements
 
         Person currentPerson = Plus.PeopleApi.getCurrentPerson(mGoogleApiClient);
 
-        // The logic below ensures you won't mix accounts if a user switches between Google Accounts.
+        // The logic below ensures you won't mix account data if a user switches between Google
+        // Accounts.
         // TODO(developer): Check the account ID against any previous login locally.
         // TODO(developer): Delete the local data if the account ID differs.
         // TODO(developer): Construct local storage keyed on the account ID.
 
         onSignedIn(currentPerson);
+    }
+
+    /**
+     * The connection to Google Play services was lost for some reason, the auto management
+     * facility will try to reconnect automatically. This callback should be used to suspend use of
+     * the {@link GoogleApiClient} until it becomes connected again.
+     */
+    @Override
+    public void onConnectionSuspended(int cause) {
+        // Indicate API calls to Google Play services APIs should be halted.
+        googleApiClientConnectionStateChange(false);
     }
 
     /**
@@ -217,8 +248,8 @@ public class MainActivity extends FragmentActivity implements
     @Override
     public void onConnectionFailed(ConnectionResult result) {
         // Refer to the javadoc for ConnectionResult to see what error codes might be returned in
-        // onConnectionFailed. Since this sample is the AutoManage sample only unresolvable errors
-        // will be returned.
+        // onConnectionFailed. Since this is the AutoManage sample only unresolvable errors
+        // are returned here.
 
         Log.i(TAG, "onConnectionFailed: ConnectionResult.getErrorCode() = "
                 + result.getErrorCode());
@@ -231,9 +262,7 @@ public class MainActivity extends FragmentActivity implements
             Log.i(TAG, "onConnectionFailed because an API was unavailable");
         }
 
-        // In this sample we consider the user signed out when they do not have a connection to
-        // Google Play Services.
-        onSignedOut();
+        googleApiClientConnectionStateChange(false);
     }
 
     /**
@@ -262,19 +291,6 @@ public class MainActivity extends FragmentActivity implements
     }
 
     /**
-     * The connection to Google Play services was lost for some reason, the auto management
-     * facility will try to reconnect automatically since we registered with autoManage. This
-     * callback should be used to suspend use of the {@link GoogleApiClient} until it becomes
-     * connected again.
-     */
-    @Override
-    public void onConnectionSuspended(int cause) {
-        // TODO(developer): Implement logic to halt API calls to Google Play services,
-        // including cancelling AsyncTasks or Intents that might be working with the
-        // GoogleApiClient.
-    }
-
-    /**
      * Returns whether the user is signed into the app.
      */
     private boolean isSignedIn() {
@@ -295,5 +311,23 @@ public class MainActivity extends FragmentActivity implements
         SharedPreferences.Editor editor = sharedPrefs.edit();
         editor.putBoolean(PREFS_IS_SIGNED_IN, signedIn);
         editor.apply();
+    }
+
+    /**
+     * Centralized location for dealing with GoogleApiClient connects or disconnects.
+     */
+    private void googleApiClientConnectionStateChange(final boolean connected) {
+        final Context appContext = this.getApplicationContext();
+
+        // TODO(developer): Kill AsyncTasks, or threads using the GoogleApiClient.
+
+        // Display Toast that isn't dependent on the current activity (in case of a rotation).
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(appContext, "Google Api Client has connected:" + connected,
+                        Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 }
