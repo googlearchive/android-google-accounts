@@ -9,7 +9,7 @@ This repo contains the following samples:
 
 1. [Quickstart](https://github.com/googlesamples/android-google-accounts/tree/master/QuickStart):
 A quickstart to add a Google Account Login to any activity in your Android app.
-2. [AutoManage](https://github.com/googlesamples/android-play-location/tree/master/LocationUpdates):
+2. [AutoManage](https://github.com/googlesamples/android-google-accounts/tree/master/AutoManage):
 If using a FragmentActivity you can use a built-in AutoManager to manage the GoogleApiClient.
 
 Prerequisites
